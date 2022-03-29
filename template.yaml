@@ -1,0 +1,338 @@
+---
+# Source: up9mizu/templates/namespace.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mizu
+  labels:
+    heritage: Helm
+    release: release-name
+---
+# Source: up9mizu/templates/serviceAccount.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mizu-service-account
+  namespace: mizu
+---
+# Source: up9mizu/templates/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mizu-config
+  namespace: mizu
+data:
+  NOTE: This config map contains only DEFAULT values, please do not change it. Please consult documentation on how to alter Mizu runtime configuration.
+  mizu-default-config.json: >-
+    {"db":{"maxSizeBytes":500000000,"path":"/app/data/"},"features":{"oas":true,"serviceMap":true,"demo":false},"tapper":{"imagePullPolicy":"Always","imagePath":"docker.io/up9inc/mizu:30.0","namespace":"mizu","resources":{"CpuLimit":"750m","MemoryLimit":"1Gi","CpuRequests":"50m","MemoryRequests":"50Mi"}},"logLevel":4,"telemetry":{"enabled":true},"notification":{"emailHookUrl":"https://europe-west1-mimetic-card-241611.cloudfunctions.net/mizu-mail/"}}
+---
+# Source: up9mizu/templates/PersistentVolumeClaim.yaml
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: mizu-traffic-volume-claim
+  namespace: mizu
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    limits:
+      storage: 1G
+    requests:
+      storage: 1G
+---
+# Source: up9mizu/templates/PersistentVolumeClaim.yaml
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: mizu-db-volume-claim
+  namespace: mizu
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    limits:
+      storage: 100M
+    requests:
+      storage: 100M
+---
+# Source: up9mizu/templates/clusterRole.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: mizu-cluster-role
+  namespace: mizu
+  labels:
+    heritage: Helm
+    release: release-name
+rules:
+  - apiGroups: [ "", "extensions", "apps" ]
+    resources: [ "endpoints", "pods", "services", "namespaces" ]
+    verbs: [ "get", "list", "watch" ]
+---
+# Source: up9mizu/templates/clusterRole.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: mizu-cluster-role-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: mizu-cluster-role
+subjects:
+  - kind: ServiceAccount
+    name: mizu-service-account
+    namespace: mizu
+---
+# Source: up9mizu/templates/role.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: mizu-role-daemon
+  namespace: mizu
+rules:
+  - apiGroups: [ "apps" ]
+    resources: [ "daemonsets" ]
+    verbs: [ "patch", "get", "list", "create", "delete" ]
+  - apiGroups: [ "events.k8s.io" ]
+    resources: [ "events" ]
+    verbs: [ "list", "watch" ]
+---
+# Source: up9mizu/templates/role.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: mizu-role-binding-daemon
+  namespace: mizu
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: mizu-role-daemon
+subjects:
+  - kind: ServiceAccount
+    name: mizu-service-account
+    namespace: mizu
+---
+# Source: up9mizu/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: mizu-api-server
+  namespace: mizu
+spec:
+  type: ClusterIP
+  ports:
+    - name: api
+      port: 80
+      targetPort: 8899
+      protocol: TCP
+  selector:
+    app: mizu-api-server
+---
+# Source: up9mizu/templates/daemonset.yaml
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: mizu-tapper-daemon-set
+  namespace: mizu
+  labels:
+    app: mizu-tapper-daemon-set
+spec:
+  selector:
+    matchLabels:
+      app: mizu-tapper
+  template:
+    metadata:
+      name: mizu-tapper
+      labels:
+        app: mizu-tapper
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              # In order to create a DaemonSet with 0 pods, match nodes with a label that doesn't exist.
+              # The affinity is updated at a later stage by the Mizu agent.
+              # The purpose of creating a DaemonSet with 0 nodes (instead of having the agent create it later
+              # with the non-empty affinity) is that this way if the Helm chart is uninstalled,
+              # the DaemonSet is also deleted.
+              - key: mizu-non-existing-label
+                operator: Exists
+      containers:
+        - name: mizu-tapper
+          image: "docker.io/up9inc/mizu:30.0"
+---
+# Source: up9mizu/templates/statefulSet.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mizu-api-server
+  namespace: mizu
+  labels:
+    app: mizu-api-server
+spec:
+  serviceName: mizu-api-server
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mizu-api-server
+  template:
+    metadata:
+      name: mizu-api-server
+      creationTimestamp: null
+      labels:
+        app: mizu-api-server
+      annotations:
+        rollme: "dWq1cEbqNA"
+    spec:
+      volumes:
+        - name: mizu-config
+          configMap:
+            name: mizu-config
+            defaultMode: 420
+        - name: mizu-traffic-volume-claim
+          persistentVolumeClaim:
+            claimName: mizu-traffic-volume-claim
+        - name: mizu-db-volume-claim
+          persistentVolumeClaim:
+            claimName: mizu-db-volume-claim
+      containers:
+        - name: mizu-api-server
+          image: "docker.io/up9inc/mizu-enterprise:30.0"
+          command:
+            - ./mizuagent
+          env:
+            - name: SYNC_ENTRIES_CONFIG
+            - name: LOG_LEVEL
+              value: INFO
+            - name: K8S_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: AGENT_IMAGE
+              value: docker.io/up9inc/mizu-enterprise:30.0
+            - name: KRATOS_IMAGE
+              value: docker.io/up9inc/mizu-kratos:0.0.1
+            - name: KETO_IMAGE
+              value: docker.io/up9inc/mizu-keto:0.0.1
+            - name: BASENINE_IMAGE
+              value: docker.io/up9inc/mizu:30.0
+          resources:
+            limits:
+              cpu: 750m
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 50Mi
+          volumeMounts:
+            - name: mizu-config
+              mountPath: /app/data/mizu-default-config.json
+              subPath: mizu-default-config.json
+            - name: mizu-db-volume-claim
+              mountPath: /app/data/
+          livenessProbe:
+            httpGet:
+              path: /echo
+              port: 8899
+              scheme: HTTP
+            initialDelaySeconds: 1
+            timeoutSeconds: 1
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 3
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          imagePullPolicy: Always
+        - name: basenine
+          image: "docker.io/up9inc/mizu:30.0"
+          command:
+            - basenine
+          args:
+            - '-addr'
+            - 0.0.0.0
+            - '-port'
+            - '9099'
+            - '-persistent'
+          workingDir: /app/data/
+          resources:
+            limits:
+              cpu: 750m
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 50Mi
+          volumeMounts:
+            - name: mizu-config
+              mountPath: /app/config/
+            - name: mizu-traffic-volume-claim
+              mountPath: /app/data/
+          readinessProbe:
+            tcpSocket:
+              port: 9099
+            timeoutSeconds: 1
+            periodSeconds: 1
+            successThreshold: 1
+            failureThreshold: 3
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          imagePullPolicy: Always
+        - name: kratos
+          image: "docker.io/up9inc/mizu-kratos:0.0.1"
+          resources:
+            limits:
+              cpu: 750m
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 50Mi
+          volumeMounts:
+            - name: mizu-config
+              mountPath: /app/config/
+            - name: mizu-db-volume-claim
+              mountPath: /app/data/
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 4433
+              scheme: HTTP
+            timeoutSeconds: 1
+            periodSeconds: 1
+            successThreshold: 1
+            failureThreshold: 3
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          imagePullPolicy: Always
+        - name: keto
+          image: "docker.io/up9inc/mizu-keto:0.0.1"
+          resources:
+            limits:
+              cpu: 750m
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 50Mi
+          volumeMounts:
+            - name: mizu-config
+              mountPath: /app/config/
+            - name: mizu-db-volume-claim
+              mountPath: /app/data/
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 4466
+              scheme: HTTP
+            timeoutSeconds: 1
+            periodSeconds: 1
+            successThreshold: 1
+            failureThreshold: 3
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          imagePullPolicy: Always
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 0
+      dnsPolicy: ClusterFirstWithHostNet
+      serviceAccountName: mizu-service-account
+      serviceAccount: mizu-service-account
+      securityContext: { }
+      schedulerName: default-scheduler

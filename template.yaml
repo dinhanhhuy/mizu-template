@@ -161,7 +161,8 @@ spec:
                 operator: Exists
       containers:
         - name: mizu-tapper
-          image: "docker.io/up9inc/mizu:30.0"
+          # image: "docker.io/up9inc/mizu:30.0"
+          image: "harbor.zalopay.vn/core/docker.io/up9inc/mizu:30.0"
 ---
 # Source: up9mizu/templates/statefulSet.yaml
 apiVersion: apps/v1
@@ -199,7 +200,8 @@ spec:
             claimName: mizu-db-volume-claim
       containers:
         - name: mizu-api-server
-          image: "docker.io/up9inc/mizu-enterprise:30.0"
+          # image: "docker.io/up9inc/mizu-enterprise:30.0"
+          image: "harbor.zalopay.vn/core/docker.io/up9inc/mizu-enterprise:30.0"
           command:
             - ./mizuagent
           env:
@@ -245,7 +247,8 @@ spec:
           terminationMessagePolicy: File
           imagePullPolicy: Always
         - name: basenine
-          image: "docker.io/up9inc/mizu:30.0"
+          # image: "docker.io/up9inc/mizu:30.0"
+          image: "harbor.zalopay.vn/core/docker.io/up9inc/mizu:30.0"
           command:
             - basenine
           args:
@@ -278,7 +281,8 @@ spec:
           terminationMessagePolicy: File
           imagePullPolicy: Always
         - name: kratos
-          image: "docker.io/up9inc/mizu-kratos:0.0.1"
+          # image: "docker.io/up9inc/mizu-kratos:0.0.1"
+          image: "harbor.zalopay.vn/core/docker.io/up9inc/mizu-kratos:0.0.1"
           resources:
             limits:
               cpu: 750m
@@ -304,7 +308,8 @@ spec:
           terminationMessagePolicy: File
           imagePullPolicy: Always
         - name: keto
-          image: "docker.io/up9inc/mizu-keto:0.0.1"
+          # image: "docker.io/up9inc/mizu-keto:0.0.1"
+          image: "harbor.zalopay.vn/core/docker.io/up9inc/mizu-keto:0.0.1"
           resources:
             limits:
               cpu: 750m
